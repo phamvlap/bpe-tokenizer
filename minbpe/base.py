@@ -1,4 +1,7 @@
-from minbpe.utils import clean_token
+import os
+
+from .utils import bytes_to_string
+from .constants import MAX_BYTE_SIZE
 
 
 class Tokenizer:
@@ -14,13 +17,14 @@ class Tokenizer:
         self.merges = {}
         self.pattern = ""
         self.special_tokens = {}
-        self.vocab = self._build_vocab()
+        self.vocab = self.__build_vocab()
 
-    def _build_vocab(self) -> dict[int, bytes]:
-        vocab = {idx: bytes([idx]) for idx in range(256)}
+    def __build_vocab(self) -> dict[int, bytes]:
+        vocab = {idx: bytes([idx]) for idx in range(MAX_BYTE_SIZE)}
 
         for (p0, p1), idx in self.merges.items():
             vocab[idx] = vocab[p0] + vocab[p1]
+
         for special_token, idx in self.special_tokens.items():
             vocab[idx] = special_token.encode(encoding="utf-8")
 
@@ -42,6 +46,10 @@ class Tokenizer:
     """
 
     def save(self, file_prefix: str) -> None:
+        save_dir = file_prefix.rsplit("/", 1)[0]
+        if save_dir and not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
         model_file = file_prefix + ".model"
         vocab_file = file_prefix + ".vocab"
 
@@ -60,12 +68,12 @@ class Tokenizer:
         inverted_merges = {idx: pair for pair, idx in self.merges.items()}
         with open(vocab_file, "w", encoding="utf-8") as f:
             for idx, token in self.vocab.items():
-                s = clean_token(token)
+                s = bytes_to_string(token)
 
                 if idx in inverted_merges:
                     idx0, idx1 = inverted_merges[idx]
-                    s0 = clean_token(self.vocab[idx0])
-                    s1 = clean_token(self.vocab[idx1])
+                    s0 = bytes_to_string(self.vocab[idx0])
+                    s1 = bytes_to_string(self.vocab[idx1])
                     f.write(f"[{s0}][{s1}] -> [{s}] {idx}\n")
                 else:
                     f.write(f"[{s}] {idx}\n")
@@ -75,10 +83,13 @@ class Tokenizer:
     """
 
     def load(self, model_file: str) -> None:
-        idx = 256
+        if not os.path.exists(model_file):
+            raise ValueError(f"{model_file} not found.")
+
+        idx = MAX_BYTE_SIZE
 
         with open(model_file, "r") as f:
-            version = f.readline().strip()
+            _version = f.readline().strip()
             self.pattern = f.readline().strip()
 
             num_special_tokens = int(f.readline().strip())
@@ -92,4 +103,4 @@ class Tokenizer:
                 self.merges[(idx1, idx2)] = int(idx)
                 idx += 1
 
-        self.vocab = self._build_vocab()
+        self.vocab = self.__build_vocab()

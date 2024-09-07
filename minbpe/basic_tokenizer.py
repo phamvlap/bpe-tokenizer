@@ -1,5 +1,6 @@
-from minbpe.base import Tokenizer
-from minbpe.utils import get_statistics, merge
+from .base import Tokenizer
+from .utils import get_statistics, merge
+from .constants import MAX_BYTE_SIZE
 
 
 class BasicTokenizer(Tokenizer):
@@ -7,18 +8,18 @@ class BasicTokenizer(Tokenizer):
         super().__init__()
 
     def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
-        num_merges = vocab_size - 256
+        num_merges = vocab_size - MAX_BYTE_SIZE
         ids = list(text.encode(encoding="utf-8"))
 
         merges = {}
-        vocab = {idx: bytes([idx]) for idx in range(256)}
+        vocab = {idx: bytes([idx]) for idx in range(MAX_BYTE_SIZE)}
 
         print("Training Basic Tokenizer...")
         for i in range(num_merges):
             stats = get_statistics(ids)
             top_pair = max(stats, key=stats.get)
-            idx = 256 + i
-            ids = merge(ids=ids, pair=top_pair, index=idx)
+            idx = MAX_BYTE_SIZE + i
+            ids = merge(ids=ids, pair=top_pair, new_index=idx)
             merges[top_pair] = idx
             vocab[idx] = vocab[top_pair[0]] + vocab[top_pair[1]]
             if verbose:
@@ -40,11 +41,14 @@ class BasicTokenizer(Tokenizer):
 
         while len(tokens) > 1:
             stats = get_statistics(tokens)
-            pair = min(stats, key=lambda x: self.merges.get(x, float("inf")))
+            pair = min(
+                stats,
+                key=lambda pair: self.merges.get(pair, float("inf")),
+            )
             if pair not in self.merges:
                 break
             idx = self.merges[pair]
-            tokens = merge(ids=tokens, pair=pair, index=idx)
+            tokens = merge(ids=tokens, pair=pair, new_index=idx)
 
         return tokens
 

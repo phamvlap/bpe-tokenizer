@@ -1,21 +1,21 @@
 import unicodedata
 
 
-# Statistic frequency of pairs of tokens in a list of ids
-def get_statistics(ids: list, counts: dict = None) -> dict:
+# Statistic frequency of pairs of adjacent tokens in a list of ids
+def get_statistics(ids: list[int], counts: dict = None) -> dict:
     counts = {} if counts is None else counts
     for pair in zip(ids, ids[1:]):
-        counts[pair] = counts.get(key=pair, default=0) + 1
+        counts[pair] = counts.get(pair, 0) + 1
     return counts
 
 
-# Replace all occurrences of a pair of tokens with a single token (index)
-def merge(ids: list, pair: tuple, index: int) -> list:
+# Replace all occurrences of a pair of tokens with a single token (new_index)
+def merge(ids: list[int], pair: tuple[int, int], new_index: int) -> list[int]:
     new_ids = []
     i = 0
     while i < len(ids):
         if ids[i] == pair[0] and i + 1 < len(ids) and ids[i + 1] == pair[1]:
-            new_ids.append(index)
+            new_ids.append(new_index)
             i += 2
         else:
             new_ids.append(ids[i])
@@ -38,6 +38,6 @@ def replace_control_chars(s: str) -> str:
 
 
 # Render pretty token
-def clean_token(t: bytes) -> str:
+def bytes_to_string(t: bytes) -> str:
     s = t.decode(encoding="utf-8", errors="replace")
     return replace_control_chars(s)
