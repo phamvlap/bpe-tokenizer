@@ -1,7 +1,9 @@
+import os
 import tiktoken
 
 from minbpe import RegexTokenizer
-from minbpe.utils import clean_token
+from .utils import bytes_to_string
+from .constants import GPT4_SPECIAL_TOKENS, MAX_BYTE_SIZE, SplitPattern
 
 
 # Helper functions
@@ -63,38 +65,30 @@ def recover_merges(mergeable_ranks: dict[bytes, int]) -> dict[tuple[int, int], i
     return merges
 
 
-# GPT Tokenizer
-GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
-GPT4_SPECIAL_TOKENS = {
-    "<|endoftext|>": 100257,
-    "<|fim_prefix|>": 100258,
-    "<|fim_middle|>": 100259,
-    "<|fim_suffix|>": 100260,
-    "<|endofprompt|>": 100276,
-}
-
-
 class GPT4Tokenizer(RegexTokenizer):
     def __init__(self) -> None:
-        super().__init__(pattern=GPT4_SPLIT_PATTERN)
+        super().__init__(pattern=SplitPattern.GPT4_SPLIT_PATTERN)
+        # Load the encoding from the tiktoken
         enc = tiktoken.get_encoding("cl100k_base")
         mergeable_ranks = enc._mergeable_ranks
         self.merges = recover_merges(mergeable_ranks)
 
-        vocab = {idx: bytes([idx]) for idx in range(256)}
+        vocab = {idx: bytes([idx]) for idx in range(MAX_BYTE_SIZE)}
         for (p0, p1), idx in self.merges.items():
             vocab[idx] = vocab[p0] + vocab[p1]
         self.vocab = vocab
 
         # byte_shuffle: byte (0-255) -> mergeable rank[byte]
-        self.byte_shuffle = {i: mergeable_ranks[bytes([i])] for i in range(256)}
+        self.byte_shuffle = {
+            i: mergeable_ranks[bytes([i])] for i in range(MAX_BYTE_SIZE)
+        }
         # inverse_byte_shuffle: mergeable rank[byte] -> byte (0-255)
         self.inverse_byte_shuffle = {v: k for k, v in self.byte_shuffle.items()}
 
         self.register_special_tokens(GPT4_SPECIAL_TOKENS)
 
     def train(self, text: str, vocab_size: int, verbose: bool = False) -> None:
-        raise NotImplementedError
+        raise NotImplementedError("GPT4Tokenizer cannot be trained")
 
     def save(self, file_prefix: str) -> None:
         raise NotImplementedError("GPT4Tokenizer cannot be saved")
@@ -112,18 +106,25 @@ class GPT4Tokenizer(RegexTokenizer):
         return text_bytes.decode(encoding="utf-8", errors="replace")
 
     def save_vocab(self, vocab_file: str) -> None:
-        vocab = {idx: bytes([self.inverse_byte_shuffle[idx]]) for idx in range(256)}
+        vocab = {
+            idx: bytes([self.inverse_byte_shuffle[idx]]) for idx in range(MAX_BYTE_SIZE)
+        }
         for (p0, p1), idx in self.merges.items():
             vocab[idx] = vocab[p0] + vocab[p1]
 
         inverted_merges = {idx: pair for pair, idx in self.merges.items()}
+
+        save_dir = vocab_file.rsplit("/", 1)[0]
+        if save_dir and not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
         with open(vocab_file, "w", encoding="utf-8") as f:
             for idx, token in vocab.items():
-                s = clean_token(token)
+                s = bytes_to_string(token)
                 if idx in inverted_merges:
                     idx0, idx1 = inverted_merges[idx]
-                    s0 = clean_token(vocab[idx0])
-                    s1 = clean_token(vocab[idx1])
+                    s0 = bytes_to_string(vocab[idx0])
+                    s1 = bytes_to_string(vocab[idx1])
                     f.write(f"[{s0}][{s1}] -> [{s}] {idx}\n")
                 else:
                     f.write(f"[{s}] {idx}\n")

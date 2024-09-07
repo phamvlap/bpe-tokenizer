@@ -1,5 +1,13 @@
 MAX_BYTE_SIZE = 256
 
+GPT4_SPECIAL_TOKENS = {
+    "<|endoftext|>": 100257,
+    "<|fim_prefix|>": 100258,
+    "<|fim_middle|>": 100259,
+    "<|fim_suffix|>": 100260,
+    "<|endofprompt|>": 100276,
+}
+
 
 class SplitPattern:
     GPT2_SPLIT_PATTERN = (
