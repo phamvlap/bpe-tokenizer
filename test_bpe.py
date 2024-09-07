@@ -1,26 +1,24 @@
 import os
 import tiktoken
 
-from minbpe import BasicTokenizer, RegexTokenizer, GPT4Tokenizer
+from minbpe import BasicTokenizer, RegexTokenizer, GPT4Tokenizer, Tokenizer
 
 
 def unpack(text: str) -> str:
     if text.startswith("FILE:"):
         dirname = os.path.dirname(__file__)
         file = os.path.join(dirname, text[5:])
-        contents = open(file, "r", encoding="utf-8").read()
-        return contents
+
+        content = ""
+        with open(file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        return content
     else:
         return text
 
 
-# Test data
-test_strings = [
-    "",
-    "?",
-    "hello world!!!? (안녕하세요!) lol123 😉",
-    "FILE:data/text.txt",
-]
+# Special tokens
 special_tokens = {
     "<|endoftext|>": 100257,
     "<|fim_prefix|>": 100258,
@@ -28,6 +26,14 @@ special_tokens = {
     "<|fim_suffix|>": 100260,
     "<|endofprompt|>": 100276,
 }
+# Test data
+test_strings = [
+    "",
+    "?",
+    "hello world!!!? (안녕하세요!) lol123 😉",
+    "FILE:data/text.txt",
+    "aaabdaaabac",
+]
 specials_string = """
 <|endoftext|>Hello world this is one document
 <|endoftext|>And this is another document
@@ -43,7 +49,7 @@ The ancestors of llamas are thought to have originated from the Great Plains of 
 
 
 # Test functions
-def test_encode_decode(tokenizer_factory, text: str):
+def test_encode_decode(tokenizer_factory: Tokenizer, text: str) -> None:
     text = unpack(text)
     tokenizer = tokenizer_factory()
 
@@ -58,7 +64,7 @@ def test_special_token_regex(
     text: str,
     special_tokens: dict[str, int],
     allowed_special: bool | set = "none",
-):
+) -> None:
     tokenizer = RegexTokenizer()
     tokenizer.train(text=text, vocab_size=256 + 64, verbose=False)
     tokenizer.register_special_tokens(special_tokens=special_tokens)
@@ -68,14 +74,17 @@ def test_special_token_regex(
 
     assert text == decoded, "Failed to encode and decode!"
     print("Passed!")
+
     prefix = "regex_tokenizer_tmp"
     tokenizer.save(file_prefix=prefix)
 
     tokenizer = RegexTokenizer()
     tokenizer.load(model_file=f"{prefix}.model")
 
-    assert tokenizer.decode(ids) == text
-    assert tokenizer.encode(text, allowed_special=allowed_special) == ids
+    assert tokenizer.decode(ids) == text, "Failed to decode after loading tokenizer"
+    assert (
+        tokenizer.encode(text, allowed_special=allowed_special) == ids
+    ), "Failed to encode after loading tokenizer"
     print("Passed!")
 
     for file in [f"{prefix}.model", f"{prefix}.vocab"]:
@@ -83,41 +92,20 @@ def test_special_token_regex(
             os.remove(file)
 
 
-def test_wikipedia_example(tokenizer_factory):
-    text = "aaabdaaabac"
-
-    tokenizer = tokenizer_factory()
-    tokenizer.train(text=text, vocab_size=256 + 3, verbose=True)
-
-    ids = tokenizer.encode(text)
-    print(ids)
-    decoded = tokenizer.decode(ids)
-
-    assert text == decoded, "Failed to encode and decode!"
-    print("Passed!")
-
-
-def test_gpt4_tiktoken_equality(text: str):
+def test_gpt4_tiktoken_equality(
+    text: str,
+    allowed_special: set | str = "none_raise",
+) -> None:
     text = unpack(text)
 
     enc = tiktoken.get_encoding("cl100k_base")
-    titoken_ids = enc.encode(text)
+    if allowed_special == "all":
+        titoken_ids = enc.encode(text, allowed_special=allowed_special)
+    else:
+        titoken_ids = enc.encode(text)
 
     tokenizer = GPT4Tokenizer()
-    gpt4_tokenizer_ids = tokenizer.encode(text)
-
-    assert titoken_ids == gpt4_tokenizer_ids, "Failed to encode with GPT4Tokenizer!"
-    print("Passed!")
-
-
-def test_gpt4_tiktoken_equality_special_tokens(text: str):
-    text = unpack(text)
-
-    enc = tiktoken.get_encoding("cl100k_base")
-    titoken_ids = enc.encode(text, allowed_special="all")
-
-    tokenizer = GPT4Tokenizer()
-    gpt4_tokenizer_ids = tokenizer.encode(text, allowed_special="all")
+    gpt4_tokenizer_ids = tokenizer.encode(text, allowed_special=allowed_special)
 
     assert titoken_ids == gpt4_tokenizer_ids, "Failed to encode with GPT4Tokenizer!"
     print("Passed!")
@@ -130,21 +118,16 @@ if __name__ == "__main__":
         for text in test_strings:
             test_encode_decode(tokenizer, text)
 
-    print("\nTesting encode and decode with wikipedia example...")
-    for tokenizer in [BasicTokenizer, RegexTokenizer]:
-        print(tokenizer.__name__)
-        test_wikipedia_example(tokenizer)
-
-    print("\nTesting special tokens with RegexTokenizer...")
+    print("\nTesting RegexTokenizer with special tokens...")
     test_special_token_regex(
         text=llama_text,
         special_tokens=special_tokens,
         allowed_special="all",
     )
 
-    print('\nTesting GPT4Tokenizer with "cl100k_base"...')
+    print('\nTesting GPT4Tokenizer with "cl100k_base" for plain text...')
     for text in test_strings:
         test_gpt4_tiktoken_equality(text)
 
-    print("\nTesting special tokens with GPT4Tokenizer...")
-    test_gpt4_tiktoken_equality_special_tokens(text=specials_string)
+    print("\nTesting GPT4Tokenizer with special tokens in text...")
+    test_gpt4_tiktoken_equality(text=specials_string, allowed_special="all")
